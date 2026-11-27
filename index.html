@@ -1,0 +1,130 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arc Care QR Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 520px;
+      margin: 25px auto;
+      padding: 16px;
+      color: #17324d;
+      text-align: center;
+    }
+    h2 { color: #1f4e78; }
+    #reader { width: 100%; margin: 20px auto; }
+    button {
+      padding: 13px 20px;
+      border: 0;
+      border-radius: 7px;
+      background: #1f4e78;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #message {
+      margin: 18px 0;
+      padding: 12px;
+      background: #f0f4f8;
+      border-radius: 7px;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Arc Care Solutions</h2>
+  <p>Occupational Health Camp QR Scanner</p>
+
+  <div id="reader"></div>
+
+  <button id="startButton" onclick="startScanner()">
+    Start Camera
+  </button>
+
+  <button id="stopButton" onclick="stopScanner()" style="display:none">
+    Stop Camera
+  </button>
+
+  <div id="message">
+    Tap Start Camera and allow camera access.
+  </div>
+
+<script>
+  let scanner = null;
+  let running = false;
+  let completed = false;
+
+  function showMessage(text) {
+    document.getElementById("message").textContent = text;
+  }
+
+  async function startScanner() {
+    if (running || completed) return;
+
+    if (typeof Html5Qrcode === "undefined") {
+      showMessage("Scanner library failed to load. Check internet.");
+      return;
+    }
+
+    scanner = new Html5Qrcode("reader");
+    showMessage("Requesting camera access...");
+
+    try {
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        async function(decodedText) {
+          if (completed) return;
+          completed = true;
+
+          showMessage("QR detected. Returning token to Arc Care app...");
+
+          try {
+            await stopScanner();
+
+            if (window.opener && !window.opener.closed) {
+              window.opener.postMessage({
+                type: "ARC_QR_SCANNED",
+                token: decodedText.trim()
+              }, "*");
+
+              showMessage("QR scanned successfully. Return to the Arc Care app.");
+            } else {
+              showMessage("No parent app found. Close this page and reopen the scanner from Arc Care.");
+            }
+          } catch (error) {
+            showMessage("Scanner error: " + error.message);
+          }
+        },
+        function() {}
+      );
+
+      running = true;
+      document.getElementById("startButton").style.display = "none";
+      document.getElementById("stopButton").style.display = "inline-block";
+      showMessage("Camera active. Point it at the QR card.");
+
+    } catch (error) {
+      showMessage("Camera access failed: " + error);
+      scanner = null;
+    }
+  }
+
+  async function stopScanner() {
+    if (scanner && running) {
+      await scanner.stop();
+      scanner.clear();
+    }
+
+    running = false;
+    document.getElementById("stopButton").style.display = "none";
+  }
+</script>
+
+</body>
+</html>
