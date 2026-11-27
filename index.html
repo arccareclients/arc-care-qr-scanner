@@ -4,8 +4,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Arc Care QR Scanner</title>
+  <title>Arc Care QR and Barcode Scanner</title>
+
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -15,8 +17,14 @@
       color: #17324d;
       text-align: center;
     }
+
     h2 { color: #1f4e78; }
-    #reader { width: 100%; margin: 20px auto; }
+
+    #reader {
+      width: 100%;
+      margin: 20px auto;
+    }
+
     button {
       padding: 13px 20px;
       border: 0;
@@ -26,6 +34,7 @@
       font-size: 16px;
       cursor: pointer;
     }
+
     #message {
       margin: 18px 0;
       padding: 12px;
@@ -35,10 +44,11 @@
     }
   </style>
 </head>
+
 <body>
 
   <h2>Arc Care Solutions</h2>
-  <p>Occupational Health Camp QR Scanner</p>
+  <p id="scannerTitle">Occupational Health Camp QR Scanner</p>
 
   <div id="reader"></div>
 
@@ -46,7 +56,9 @@
     Start Camera
   </button>
 
-  <button id="stopButton" onclick="stopScanner()" style="display:none">
+  <button id="stopButton"
+          onclick="stopScanner()"
+          style="display:none">
     Stop Camera
   </button>
 
@@ -55,15 +67,29 @@
   </div>
 
 <script>
+
   let scanner = null;
   let running = false;
   let completed = false;
+
+  const params = new URLSearchParams(window.location.search);
+
+  const mode = params.get("mode") || "qr";
+  const targetField = params.get("field") || "";
+
+  const isVialScan = mode === "vial";
+
+  if (isVialScan) {
+    document.getElementById("scannerTitle").textContent =
+      "Occupational Health Camp – Specimen Barcode Scanner";
+  }
 
   function showMessage(text) {
     document.getElementById("message").textContent = text;
   }
 
   async function startScanner() {
+
     if (running || completed) return;
 
     if (typeof Html5Qrcode === "undefined") {
@@ -71,59 +97,133 @@
       return;
     }
 
-    scanner = new Html5Qrcode("reader");
+    const supportedFormats = [
+      Html5QrcodeSupportedFormats.QR_CODE,
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.ITF,
+      Html5QrcodeSupportedFormats.CODABAR
+    ];
+
+    scanner = new Html5Qrcode("reader", {
+      formatsToSupport: supportedFormats
+    });
+
     showMessage("Requesting camera access...");
 
     try {
+
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        {
+          fps: 10
+        },
+
         async function(decodedText) {
+
           if (completed) return;
+
           completed = true;
 
-          showMessage("QR detected. Returning token to Arc Care app...");
+          const scannedValue = String(decodedText || "").trim();
+
+          if (!scannedValue) {
+            completed = false;
+            return;
+          }
+
+          showMessage("Code detected. Returning to Arc Care app...");
 
           try {
+
             await stopScanner();
 
             if (window.opener && !window.opener.closed) {
-              window.opener.postMessage({
-                type: "ARC_QR_SCANNED",
-                token: decodedText.trim()
-              }, "*");
 
-              showMessage("QR scanned successfully. Return to the Arc Care app.");
+              if (isVialScan) {
+
+                window.opener.postMessage({
+                  type: "ARC_VIAL_BARCODE_SCANNED",
+                  barcode: scannedValue,
+                  fieldId: targetField
+                }, "*");
+
+                showMessage(
+                  "Vial barcode scanned. Return to the Arc Care app."
+                );
+
+              } else {
+
+                window.opener.postMessage({
+                  type: "ARC_QR_SCANNED",
+                  token: scannedValue
+                }, "*");
+
+                showMessage(
+                  "Employee QR scanned. Return to the Arc Care app."
+                );
+
+              }
+
             } else {
-              showMessage("No parent app found. Close this page and reopen the scanner from Arc Care.");
+
+              showMessage(
+                "No parent app found. Close this page and reopen the scanner from Arc Care."
+              );
+
             }
+
           } catch (error) {
+
             showMessage("Scanner error: " + error.message);
+
           }
+
         },
+
         function() {}
+
       );
 
       running = true;
+
       document.getElementById("startButton").style.display = "none";
       document.getElementById("stopButton").style.display = "inline-block";
-      showMessage("Camera active. Point it at the QR card.");
+
+      showMessage(
+        isVialScan
+          ? "Camera active. Point it at the vial's linear barcode."
+          : "Camera active. Point it at the employee QR card."
+      );
 
     } catch (error) {
+
       showMessage("Camera access failed: " + error);
       scanner = null;
+
     }
+
   }
 
   async function stopScanner() {
+
     if (scanner && running) {
+
       await scanner.stop();
       scanner.clear();
+
     }
 
     running = false;
+
     document.getElementById("stopButton").style.display = "none";
+
   }
+
 </script>
 
 </body>
